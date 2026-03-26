@@ -1,0 +1,25 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and sensitive data
+soc-ai/logs/
+/tmp/
+
+# Wazuh certs and keys
+wazuh-docker/single-node/config/wazuh_indexer_ssl_certs/
+wazuh-docker/single-node/config/wazuh_cluster/
+/var/ossec/etc/client.keys
+
+# Environment config
+soc-ai/.env
+
+# Ollama models (too large)
+.ollama/
+
+# Editor
+.vscode/
+*.swp
+wazuh-docker/

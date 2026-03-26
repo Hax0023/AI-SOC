@@ -1,0 +1,19 @@
+name: Network Recon Response
+trigger:
+  attack_type: "Recon"
+  min_severity: "Low"
+
+actions:
+  - name: log_incident
+    type: log_incident
+    enabled: true
+    description: "Log recon activity to incident file"
+
+  - name: notify
+    type: console_alert
+    enabled: true
+    description: "Alert analyst of recon activity"
+
+metadata:
+  severity_threshold: "Low"
+  analyst_review_required: true

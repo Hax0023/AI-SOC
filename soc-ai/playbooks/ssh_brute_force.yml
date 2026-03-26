@@ -1,0 +1,26 @@
+name: SSH Brute Force Response
+trigger:
+  attack_type: "SSH Brute Force"
+  min_severity: "High"
+  mitre_tactic: "Credential Access"
+
+actions:
+  - name: block_ip
+    type: firewall_block
+    enabled: true
+    description: "Block source IP via iptables"
+
+  - name: create_ticket
+    type: log_incident
+    enabled: true
+    description: "Log incident to SOC incident file"
+
+  - name: notify
+    type: console_alert
+    enabled: true
+    description: "Print high-visibility alert to terminal"
+
+metadata:
+  severity_threshold: "High"
+  auto_unblock_minutes: 60
+  analyst_review_required: false
