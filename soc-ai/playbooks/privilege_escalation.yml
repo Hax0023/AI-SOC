@@ -1,0 +1,19 @@
+name: Privilege Escalation Response
+trigger:
+  attack_type: "Privilege"
+  min_severity: "Low"
+
+actions:
+  - name: log_incident
+    type: log_incident
+    enabled: true
+    description: "Log privilege escalation to incident file"
+
+  - name: notify
+    type: console_alert
+    enabled: true
+    description: "Alert analyst of privilege escalation"
+
+metadata:
+  severity_threshold: "Medium"
+  analyst_review_required: true

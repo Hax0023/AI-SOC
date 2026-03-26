@@ -28,7 +28,7 @@ def analyze_alert(alert):
     aname=str(agent.get('name','?'))
     aip=str(agent.get('ip','?'))
     mitre=str(rule.get('mitre',{}).get('id','N/A'))
-    dstr=json.dumps(data,default=str)[:250]
+    dstr=json.dumps({k:str(v)[:60] for k,v in data.items() if k not in ["full_log","previous_log"]},default=str)[:200]
     prompt=(
         f'You are a SOC analyst reviewing: {desc}.\n'
         'Output ONLY a flat JSON object. No markdown, no outer keys.\n\n'
@@ -37,10 +37,10 @@ def analyze_alert(alert):
         f'Agent:{aname}({aip}) MITRE:{mitre}\n'
         f'Data:{dstr}\n\n'
         'Reply with REAL values in this JSON:\n'
-        '{"severity":"Low","attack_type":"Network Recon",'
-        '"mitre_tactic":"Discovery",'
+        '{"severity":"High","attack_type":"<actual attack based on description>",'
+        '"mitre_tactic":"<actual tactic from MITRE field above>",'
         '"false_positive_chance":"Low",'
-        '"recommended_action":"Monitor source IP for further activity",'
+        '"recommended_action":"<specific action for this exact alert>",'
         '"explanation":"2 sentences about this specific alert"}'
     )
     try:

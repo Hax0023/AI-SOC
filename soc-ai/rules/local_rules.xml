@@ -1,45 +1,62 @@
-<group name="soc-lab,attack,brute-force">
+<group name="soc-lab,attack,brute-force,recon">
 
-  <!-- Rule 100001: Fires on EVERY non-existent user attempt (chains from 5710) -->
   <rule id="100001" level="10">
     <if_sid>5710</if_sid>
-    <description>SOC-LAB: SSH login attempt with non-existent user $(srcuser) from $(srcip)</description>
-    <mitre>
-      <id>T1110.001</id>
-    </mitre>
+    <description>SOC-LAB: SSH login non-existent user $(srcuser) from $(srcip)</description>
+    <mitre><id>T1110.001</id></mitre>
     <group>authentication_failures,brute_force</group>
   </rule>
 
-  <!-- Rule 100002: Brute force — 8+ attempts from same IP (chains from 100001) -->
   <rule id="100002" level="14" frequency="8" timeframe="120">
     <if_matched_sid>100001</if_matched_sid>
     <same_source_ip />
-    <description>SOC-LAB: SSH Brute Force Detected! $(frequency) attempts from $(srcip)</description>
-    <mitre>
-      <id>T1110</id>
-    </mitre>
-    <group>authentication_failures,brute_force,pci_dss_10.2.4</group>
+    <description>SOC-LAB: SSH Brute Force! $(frequency) attempts from $(srcip)</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failures,brute_force</group>
   </rule>
 
-  <!-- Rule 100003: Auth failure on real user -->
   <rule id="100003" level="10">
     <if_sid>5716</if_sid>
-    <description>SOC-LAB: SSH authentication failed for user $(srcuser) from $(srcip)</description>
-    <mitre>
-      <id>T1110</id>
-    </mitre>
+    <description>SOC-LAB: SSH auth failed $(srcuser) from $(srcip)</description>
+    <mitre><id>T1110</id></mitre>
     <group>authentication_failures</group>
   </rule>
 
-  <!-- Rule 100004: Brute force on real user -->
   <rule id="100004" level="14" frequency="8" timeframe="120">
     <if_matched_sid>100003</if_matched_sid>
     <same_source_ip />
-    <description>SOC-LAB: SSH Brute Force on real user! $(frequency) attempts from $(srcip)</description>
-    <mitre>
-      <id>T1110</id>
-    </mitre>
+    <description>SOC-LAB: SSH Brute Force real user! $(frequency) from $(srcip)</description>
+    <mitre><id>T1110</id></mitre>
     <group>authentication_failures,brute_force</group>
+  </rule>
+
+  <rule id="100005" level="8">
+    <if_sid>86601</if_sid>
+    <description>SOC-LAB: Ping/Network scan detected</description>
+    <mitre><id>T1018</id></mitre>
+    <group>network_scan,recon</group>
+  </rule>
+
+  <rule id="100010" level="12">
+    <if_sid>5402</if_sid>
+    <description>SOC-LAB: Sudo privilege escalation by $(dstuser)</description>
+    <mitre><id>T1548.003</id></mitre>
+    <group>privilege_escalation,attack</group>
+  </rule>
+
+  <rule id="100011" level="12">
+    <if_sid>5901</if_sid>
+    <description>SOC-LAB: New user account created - $(dstuser)</description>
+    <mitre><id>T1136.001</id></mitre>
+    <group>account_creation,attack</group>
+  </rule>
+
+  <rule id="100012" level="14">
+    <if_sid>550</if_sid>
+    <match>/etc/passwd|/etc/shadow|/etc/sudoers</match>
+    <description>SOC-LAB: Critical file modified - possible persistence</description>
+    <mitre><id>T1098</id></mitre>
+    <group>file_integrity,persistence,attack</group>
   </rule>
 
 </group>

@@ -13,7 +13,7 @@ def load_triage():
             for l in f:
                 try:
                     e=json.loads(l.strip())
-                    if e.get("severity") and e.get("severity") not in ["?","name"]:
+                    if e.get("rule_id"):
                         entries.append(e)
                 except:pass
     except:pass
