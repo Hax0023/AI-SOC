@@ -8,6 +8,14 @@ warn(){ echo -e "${YEL}[!] $1${R}"; }
 fail(){ echo -e "${RED}[-] $1${R}"; exit 1; }
 
 echo -e "\n${BLD}${CYN}=== AI-ASSISTED SOC INSTALLER ===${R}\n"
+
+# Prompt for Wazuh password at install time
+echo -e "${BLD}Set your Wazuh admin password:${R}"
+read -s -p "Password (min 8 chars): " WAZUH_PASSWORD; echo
+read -s -p "Confirm password: " WAZUH_PASSWORD2; echo
+[[ "$WAZUH_PASSWORD" != "$WAZUH_PASSWORD2" ]] && fail "Passwords do not match."
+[[ ${#WAZUH_PASSWORD} -lt 8 ]] && fail "Password must be at least 8 characters."
+ok "Password set"
 [[ $(id -u) -eq 0 ]] && fail "Do not run as root."
 command -v apt &>/dev/null || fail "Requires Debian/Kali Linux."
 RAM=$(free -g | awk '/Mem/{print $2}')
@@ -69,6 +77,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r ../requirements.txt --quiet
 cp .env.example .env
+sed -i "s|WAZUH_PASS=.*|WAZUH_PASS=${WAZUH_PASSWORD}|" .env
 ok "Python venv ready"
 
 step "Configuring Suricata..."
@@ -114,5 +123,5 @@ ok "Custom rules deployed"
 echo -e "\n${BLD}${GRN}=== INSTALLATION COMPLETE ===${R}"
 echo -e "${GRN}  Wazuh Dashboard : https://localhost${R}"
 echo -e "${GRN}  SOC Dashboard   : http://localhost:8080${R}"
-echo -e "${GRN}  Login           : admin / SecretPassword${R}"
+echo -e "${GRN}  Login           : admin / (password set during install)${R}"
 echo -e "${G
