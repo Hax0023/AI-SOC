@@ -77,7 +77,8 @@ def get_alerts(seen):
             rule=a.get("rule",{})
             lvl=int(rule.get("level",0))
             uid=a.get("timestamp","")+"-"+rule.get("id","")
-            if uid not in seen and lvl>=6:
+            SCA=["19007","19004","19008","19009","19010"]
+            if uid not in seen and lvl>=6 and rule.get("id","") not in SCA:
                 new.append((uid,a))
         except:pass
     return new

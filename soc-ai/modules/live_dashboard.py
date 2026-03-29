@@ -13,7 +13,8 @@ def load_triage():
             for l in f:
                 try:
                     e=json.loads(l.strip())
-                    if e.get("rule_id"):
+                    SCA=["19007","19004","19008","19009","19010"]
+                    if e.get("rule_id") and e.get("rule_id","") not in SCA:
                         entries.append(e)
                 except:pass
     except:pass
