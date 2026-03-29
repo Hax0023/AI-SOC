@@ -16,6 +16,18 @@ step "Fixing agent config..."
 sudo sed -i "s|<address>.*</address>|<address>${MANAGER_IP}</address>|g" /var/ossec/etc/ossec.conf 2>/dev/null
 sudo systemctl restart wazuh-agent 2>/dev/null
 ok "Agent restarted pointing to $MANAGER_IP"
+sleep 6
+AGENT_OK=$(docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l 2>/dev/null | grep "kali-soc-lab" | grep -c "Active")
+if [ "$AGENT_OK" -eq 0 ]; then
+  step "Agent disconnected - re-registering..."
+  OLD_ID=$(docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l 2>/dev/null | grep "kali-soc-lab" | grep -oP "ID: K[0-9]+")
+  [ -n "$OLD_ID" ] && printf "y
+" | docker exec -i single-node-wazuh.manager-1 /var/ossec/bin/manage_agents -r "$OLD_ID" 2>/dev/null
+  sudo bash -c 'echo "" > /var/ossec/etc/client.keys'
+  sudo /var/ossec/bin/agent-auth -m "$MANAGER_IP" -p 1515 -A "kali-soc-lab" 2>/dev/null
+  sudo systemctl restart wazuh-agent 2>/dev/null
+  ok "Agent re-registered"
+fi
 step "Starting Suricata..."
 sudo systemctl start suricata 2>/dev/null
 ok "Suricata active"
