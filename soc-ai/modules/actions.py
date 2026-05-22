@@ -1,8 +1,9 @@
-import subprocess,json,os
+import subprocess,json,os,time,threading
 from datetime import datetime
 
 INCIDENT_LOG=os.path.expanduser("~/AI-SOC/soc-ai/logs/incidents.log")
 BLOCKED_IPS=os.path.expanduser("~/AI-SOC/soc-ai/logs/blocked_ips.json")
+BLOCK_TIMES=os.path.expanduser("~/AI-SOC/soc-ai/logs/block_times.json")
 os.makedirs(os.path.dirname(INCIDENT_LOG),exist_ok=True)
 
 def get_blocked():
@@ -13,19 +14,32 @@ def get_blocked():
 def save_blocked(ips):
     with open(BLOCKED_IPS,"w") as f: json.dump(ips,f)
 
-def block_ip(ip,reason="SOC auto-block"):
-    if not ip or ip in ["127.0.0.1","N/A","?"]: 
+def get_block_times():
+    try:
+        with open(BLOCK_TIMES) as f: return json.load(f)
+    except: return {}
+
+def save_block_times(bt):
+    with open(BLOCK_TIMES,"w") as f: json.dump(bt,f)
+
+def block_ip(ip,reason="SOC auto-block",unblock_minutes=60):
+    if not ip or ip in ["127.0.0.1","N/A","?"]:
         return {"status":"skipped","reason":"localhost or invalid IP"}
     blocked=get_blocked()
     if ip in blocked:
         return {"status":"already_blocked","ip":ip}
     try:
-        subprocess.run(
+        result=subprocess.run(
             ["sudo","iptables","-I","INPUT","-s",ip,"-j","DROP"],
             capture_output=True,text=True,timeout=10)
+        if result.returncode!=0:
+            return {"status":"error","error":f"iptables failed: {result.stderr.strip()}"}
         blocked.append(ip)
         save_blocked(blocked)
-        log_incident(f"BLOCKED IP {ip} — {reason}")
+        bt=get_block_times()
+        bt[ip]={"blocked_at":time.time(),"unblock_minutes":unblock_minutes}
+        save_block_times(bt)
+        log_incident(f"BLOCKED IP {ip} — {reason} (auto-unblock in {unblock_minutes}m)")
         return {"status":"blocked","ip":ip}
     except Exception as e:
         return {"status":"error","error":str(e)}
@@ -38,9 +52,33 @@ def unblock_ip(ip):
         blocked=get_blocked()
         if ip in blocked: blocked.remove(ip)
         save_blocked(blocked)
+        bt=get_block_times()
+        bt.pop(ip,None)
+        save_block_times(bt)
+        log_incident(f"UNBLOCKED IP {ip} — auto-expiry")
         return {"status":"unblocked","ip":ip}
     except Exception as e:
         return {"status":"error","error":str(e)}
+
+def check_unblock():
+    """Background loop — checks every 60s and unblocks expired IPs."""
+    while True:
+        try:
+            bt=get_block_times()
+            now=time.time()
+            for ip,info in list(bt.items()):
+                age_mins=(now-info.get("blocked_at",now))/60
+                limit=info.get("unblock_minutes",60)
+                if age_mins>=limit:
+                    print(f"[AUTO-UNBLOCK] {ip} blocked for {int(age_mins)}m — removing")
+                    unblock_ip(ip)
+        except Exception as e:
+            print(f"[!] Unblock check error: {e}")
+        time.sleep(60)
+
+def start_unblock_watcher():
+    t=threading.Thread(target=check_unblock,daemon=True)
+    t.start()
 
 def log_incident(msg,triage=None):
     ts=datetime.now().isoformat()

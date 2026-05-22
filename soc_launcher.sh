@@ -36,7 +36,7 @@ printf 'alert icmp any any -> %s any (msg:"SOC-LAB: ICMP Ping to Kali"; itype:8;
 sudo suricatasc -c reload-rules > /dev/null 2>&1
 ok "Ping rules updated for $KALI_IP"
 step "Starting Ollama..."
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/tools/ollama-install/bin:$HOME/.local/bin:$PATH"
 pgrep -x ollama > /dev/null || (nohup ollama serve > /tmp/ollama.log 2>&1 & sleep 3)
 ok "Ollama on :11434"
 step "Starting SOAR + Dashboard..."

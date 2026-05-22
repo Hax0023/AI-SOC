@@ -2,12 +2,17 @@ import json,os,sys,time,yaml
 from datetime import datetime
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from ai_triage import analyze_alert,log_triage
-from actions import block_ip,log_incident,console_alert
+from actions import block_ip,log_incident,console_alert,start_unblock_watcher
 
 PLAYBOOK_DIR=os.path.expanduser("~/AI-SOC/soc-ai/playbooks")
 SEEN=os.path.expanduser("~/AI-SOC/soc-ai/logs/soar_seen.json")
 RESPONSE_LOG=os.path.expanduser("~/AI-SOC/soc-ai/logs/soar_responses.jsonl")
 os.makedirs(os.path.dirname(SEEN),exist_ok=True)
+
+# Alert level tiers
+TIER_LOG_ONLY  = (6,7)   # log only, skip LLM
+TIER_TRIAGE    = (8,9)   # triage, no auto-response
+TIER_FULL      = (10,15) # triage + auto-response
 
 def load_playbooks():
     books=[]
@@ -32,16 +37,17 @@ def get_src_ip(alert):
     d=alert.get("data",{})
     for k in ["srcip","src_ip","data.srcip"]:
         if d.get(k): return d.get(k)
-    return alert.get("data",{}).get("srcip","N/A")
+    return "N/A"
 
 def run_playbook(pb,triage,alert):
     results=[]
     ip=get_src_ip(alert)
+    unblock_mins=pb.get("metadata",{}).get("auto_unblock_minutes",60)
     for action in pb.get("actions",[]):
         if not action.get("enabled"): continue
         atype=action.get("type")
         if atype=="firewall_block":
-            r=block_ip(ip,triage.get("attack_type","SOC"))
+            r=block_ip(ip,triage.get("attack_type","SOC"),unblock_mins)
             results.append({"action":"block_ip","result":r})
         elif atype=="log_incident":
             log_incident(f"INCIDENT: {triage.get('attack_type')} from {ip}",triage)
@@ -50,8 +56,7 @@ def run_playbook(pb,triage,alert):
             console_alert(triage)
             results.append({"action":"console_alert","result":"displayed"})
     entry={"timestamp":datetime.now().isoformat(),
-           "playbook":pb.get("name"),
-           "triage":triage,"results":results}
+           "playbook":pb.get("name"),"triage":triage,"results":results}
     with open(RESPONSE_LOG,"a") as f:
         f.write(json.dumps(entry)+"\n")
     return results
@@ -66,64 +71,97 @@ def save_seen(s):
 
 def get_alerts(seen):
     import subprocess
-    r=subprocess.run(
-        ["docker","exec","single-node-wazuh.manager-1",
-         "tail","-50","/var/ossec/logs/alerts/alerts.json"],
-        capture_output=True,text=True)
+    try:
+        r=subprocess.run(
+            ["docker","exec","single-node-wazuh.manager-1",
+             "tail","-50","/var/ossec/logs/alerts/alerts.json"],
+            capture_output=True,text=True,timeout=15)
+        if r.returncode!=0:
+            print(f"[!] Wazuh unreachable: {r.stderr.strip()}")
+            return []
+    except Exception as e:
+        print(f"[!] Wazuh connection error: {e} — retrying next cycle")
+        return []
     new=[]
+    SCA=["19007","19004","19008","19009","19010"]
     for line in r.stdout.splitlines():
         try:
             a=json.loads(line.strip())
             rule=a.get("rule",{})
             lvl=int(rule.get("level",0))
             uid=a.get("timestamp","")+"-"+rule.get("id","")
-            SCA=["19007","19004","19008","19009","19010"]
             if uid not in seen and lvl>=6 and rule.get("id","") not in SCA:
-                new.append((uid,a))
+                new.append((uid,lvl,a))
         except:pass
     return new
 
 def run():
     print("="*55)
     print("  SOAR ENGINE — AI-Assisted Auto Response")
-    print("  Polling every 30s | Min alert level: 8")
+    print("  L6-7: log only | L8-9: triage | L10+: full response")
     print("="*55+"\n")
+
     playbooks=load_playbooks()
     print(f"[*] Loaded {len(playbooks)} playbook(s)")
-    for pb in playbooks:
-        print(f"    - {pb.get('name')}")
-    print()
+    for pb in playbooks: print(f"    - {pb.get('name')}")
+
+    # Start auto-unblock background watcher
+    start_unblock_watcher()
+    print("[*] Auto-unblock watcher started\n")
+
     seen=load_seen()
     total_responses=0
+
     while True:
         try:
             ts=datetime.now().strftime("%H:%M:%S")
             new=get_alerts(seen)
+
             if new:
                 print(f"[{ts}] {len(new)} new alert(s) found")
-                for uid,alert in new:
+                for uid,lvl,alert in new:
                     rule=alert.get("rule",{})
-                    print(f"  >> Analyzing: [{rule.get('level')}] {rule.get('description','')[:40]}...")
+                    desc=rule.get('description','')[:40]
+
+                    # TIER 1 — log only, skip LLM
+                    if TIER_LOG_ONLY[0]<=lvl<=TIER_LOG_ONLY[1]:
+                        print(f"  [L{lvl}] LOG ONLY: {desc}")
+                        log_incident(f"[L{lvl}] {desc} — logged, below triage threshold")
+                        seen.add(uid)
+                        continue
+
+                    # TIER 2 — triage only, no auto-response
+                    print(f"  [L{lvl}] Triaging: {desc}...")
                     triage=analyze_alert(alert)
                     log_triage(triage)
+
+                    if TIER_TRIAGE[0]<=lvl<=TIER_TRIAGE[1]:
+                        print(f"  [L{lvl}] TRIAGE ONLY (no auto-response): {triage.get('attack_type','?')}")
+                        seen.add(uid)
+                        continue
+
+                    # TIER 3 — full triage + auto-response
                     pb=match_playbook(triage,playbooks)
                     if pb:
-                        print(f"  >> Matched playbook: {pb.get('name')}")
+                        print(f"  [L{lvl}] Matched playbook: {pb.get('name')}")
                         results=run_playbook(pb,triage,alert)
-                        print(f"  >> Actions taken: {[r['action'] for r in results]}")
+                        print(f"  [L{lvl}] Actions: {[r['action'] for r in results]}")
                         total_responses+=1
                     else:
-                        print(f"  >> No playbook matched — logged only")
+                        print(f"  [L{lvl}] No playbook matched — logged only")
                     seen.add(uid)
+
                 save_seen(seen)
             else:
                 print(f"[{ts}] No new alerts. Responses so far: {total_responses}")
+
             time.sleep(30)
+
         except KeyboardInterrupt:
             print(f"\n[*] SOAR stopped. Total responses: {total_responses}")
             break
         except Exception as e:
-            print(f"[!] Error: {e}")
+            print(f"[!] Unexpected error: {e} — recovering in 10s")
             time.sleep(10)
 
 if __name__=="__main__":
